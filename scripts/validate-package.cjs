@@ -1,0 +1,36 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const tar = require('tar');
+(async () => {
+  const manifest = JSON.parse(fs.readFileSync('src/manifest.json'));
+  const archive = path.resolve('publish', `${manifest.id}.jpl`);
+  const entries = new Map();
+  await tar.t({ file: archive, onReadEntry: entry => {
+    const chunks=[];
+    entry.on('data',chunk=>chunks.push(chunk));
+    entry.on('end',()=>entries.set(entry.path,Buffer.concat(chunks)));
+  } });
+  assert.deepEqual([...entries.keys()].sort(), ['contentScript.js','index.js','manifest.json']);
+  assert.deepEqual(JSON.parse(entries.get('manifest.json')),manifest);
+  assert.equal(manifest.app_min_version,'3.7.21');
+  const requires=[];
+  const exports={};
+  const contentContext={module:{exports},exports,require:name=>{requires.push(name);return require(name)}};
+  vm.runInNewContext(entries.get('contentScript.js').toString(),contentContext);
+  assert.equal(typeof contentContext.module.exports.default,'function');
+  assert.deepEqual([...new Set(requires)].sort(),['@codemirror/language','@codemirror/state','@codemirror/view']);
+  const registrations=[],menus=[];
+  let onStart;
+  const joplin={plugins:{register:p=>{onStart=p.onStart}},contentScripts:{register:async()=>{},onMessage:async()=>{}},commands:{register:async c=>registrations.push(c)},views:{menuItems:{create:async(...args)=>menus.push(args)}}};
+  vm.runInNewContext(entries.get('index.js').toString(),{joplin});
+  await onStart();
+  assert.equal(registrations.length,4);assert.equal(menus.length,4);
+  assert.deepEqual(registrations.map(c=>c.label),['Collapse All','Uncollapse All','Collapse Headings Only','Uncollapse Headings Only']);
+  for(const menu of menus)assert.equal(menu[2],'tools');
+  const hash=crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
+  assert.equal(JSON.parse(fs.readFileSync(archive.replace(/\.jpl$/,'.json')))._publish_hash,`sha256:${hash}`);
+  console.log(JSON.stringify({archive,bytes:fs.statSync(archive).size,sha256:hash,entries:[...entries.keys()],hostModules:requires,commands:registrations.map(c=>c.label)},null,2));
+})().catch(error=>{console.error(error);process.exitCode=1});

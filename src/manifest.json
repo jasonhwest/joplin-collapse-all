@@ -1,0 +1,15 @@
+{
+  "manifest_version": 1,
+  "id": "io.github.jasonwest.joplin-collapse-all",
+  "app_min_version": "3.7.21",
+  "version": "1.0.0",
+  "name": "Collapse All",
+  "description": "Collapse or uncollapse every nested editor fold, or headings only.",
+  "author": "Jason West",
+  "platforms": [
+    "desktop"
+  ],
+  "categories": [
+    "editor"
+  ]
+}
